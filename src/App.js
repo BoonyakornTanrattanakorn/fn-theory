@@ -15,17 +15,21 @@ export default function App() {
 
   // For graph
   const [nStart, setNStart] = useState(1);
-  const [nEnd, setNEnd] = useState(100);
+  const [nEnd, setNEnd] = useState(10000);
   const [graphData, setGraphData] = useState([]);
   // Algorithm selection
-  const [algorithm, setAlgorithm] = useState('brute');
+  const [algorithm, setAlgorithm] = useState('sieve');
 
   // Frequency state
   const [freq, setFreq] = useState({});
 
-  function isPositiveInteger(value) {
+  function isPositiveIntegerOrZero(value) {
     const num = Number(value);
-    return Number.isInteger(num) && num > 0;
+    return Number.isInteger(num) && num >= 0;
+  }
+
+  function validateInput(...values) {
+    return values.every(isPositiveIntegerOrZero);
   }
 
   function handleChange(e) {
@@ -35,11 +39,7 @@ export default function App() {
   function submit(e) {
     e.preventDefault();
     const { a, b, n } = form;
-    if (
-      isPositiveInteger(a) &&
-      isPositiveInteger(b) &&
-      isPositiveInteger(n)
-    ) {
+    if (validateInput(a, b, n)) {
       calculate(Number(a), Number(b), Number(n));
     } else {
       alert("Please enter positive integers for a, b, and n.");
@@ -67,7 +67,7 @@ export default function App() {
     const b = Number(form.b);
     const startN = Number(nStart);
     const endN = Number(nEnd);
-    if (!isPositiveInteger(a) || !isPositiveInteger(b) || !isPositiveInteger(startN) || !isPositiveInteger(endN) || startN >= endN) {
+    if (!validateInput(a, b, startN, endN) || startN >= endN) {
       alert("Enter valid positive integers for a, b, nStart < nEnd.");
       return;
     }
@@ -109,12 +109,12 @@ export default function App() {
   }
 
   // Use sieve algorithm
-  function plotGraphV2() {
+  async function plotGraphV2() {
     const a = Number(form.a);
     const b = Number(form.b);
     const startN = Number(nStart);
     const endN = Number(nEnd);
-    if (!isPositiveInteger(a) || !isPositiveInteger(b) || !isPositiveInteger(startN) || !isPositiveInteger(endN) || startN >= endN) {
+    if (!validateInput(a, b, startN, endN) || startN >= endN) {
       alert("Enter valid positive integers for a, b, nStart < nEnd.");
       return;
     }
@@ -126,11 +126,23 @@ export default function App() {
     setFreq({});
     const startTime = performance.now();
     // Sieve-like algorithm
-    for (let d = (b > 1 ? b : a + b); d < endN; d += a) {
+    for (let d = (b > 1 ? b : a + b); d+d < endN; d += a) {
       for (let i = Math.max((Math.ceil(startN / d) + 1) * d, d * 2); i <= endN; i += d) {
         data[i - startN]++;
       }
-      setProgress(Math.round(((d - (b > 1 ? b : a + b)) / (endN - (b > 1 ? b : a + b))) * 100));
+      // function timeout(delay) {
+      //   return new Promise(res => setTimeout(res, delay));
+      // }
+      // await timeout(1);
+
+      // let graphData = [];
+      // for (let n = startN; n <= endN; n++) {
+      //   let cnt = data[n - startN];
+      //   graphData.push({ n, cnt });
+      //   freqMap[cnt] = (freqMap[cnt] || 0) + 1;
+      // }
+      // setGraphData(graphData);
+      setProgress(Math.round((d / endN) * 100));
     }
     // Build graphData and freqMap
     let graphData = [];
@@ -147,28 +159,24 @@ export default function App() {
 
   // Responsive plot width: always fit window size and update on resize
   const padding = 60;
-  const [plotWidth, setPlotWidth] = useState(() => Math.max(400, window.innerWidth - padding * 2 - 30));
+  const [plotWidth, setPlotWidth] = useState(window.innerWidth - padding * 2 - 30);
   const height = 400;
 
   useEffect(() => {
     function handleResize() {
-      setPlotWidth(Math.max(400, window.innerWidth - padding * 2 - 30));
+      setPlotWidth(window.innerWidth - padding * 2 - 30);
     }
     window.addEventListener('resize', handleResize);
     handleResize();
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const tickCount = 5;
-  const maxCnt = Math.max(...graphData.map(d => d.cnt), 1);
-
   // Frequency chart dimensions based on number of bars
   const freqEntries = Object.entries(freq)
     .map(([cnt, f]) => ({ cnt: Number(cnt), freq: f }))
     .sort((a, b) => a.cnt - b.cnt);
-  const minChartWidth = 400;
-  const maxChartWidth = Math.min(window.innerWidth - 120, 900);
-  const chartWidth = Math.max(minChartWidth, Math.min(maxChartWidth, freqEntries.length * 24 + 120));
+  const maxChartWidth = window.innerWidth - 120;
+  const chartWidth = maxChartWidth;
   const chartHeight = 240;
 
   // Prepare data for CanvasJS charts
