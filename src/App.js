@@ -3,8 +3,7 @@ import FnForm from './FnForm';
 import ResultDisplay from './ResultDisplay';
 import RangeSelector from './RangeSelector';
 import ProgressBar from './ProgressBar';
-import ScatterPlot from './ScatterPlot';
-import FrequencyChart from './FrequencyChart';
+import CanvasJSReact from '@canvasjs/react-charts';
 
 
 export default function App() {
@@ -16,10 +15,10 @@ export default function App() {
 
   // For graph
   const [nStart, setNStart] = useState(1);
-  const [nEnd, setNEnd] = useState(10000);
+  const [nEnd, setNEnd] = useState(100);
   const [graphData, setGraphData] = useState([]);
-  const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, n: 0, cnt: 0 });
-  const [barTooltip, setBarTooltip] = useState({ visible: false, x: 0, y: 0, n: 0, cnt: 0 });
+  // Algorithm selection
+  const [algorithm, setAlgorithm] = useState('brute');
 
   // Frequency state
   const [freq, setFreq] = useState({});
@@ -62,6 +61,7 @@ export default function App() {
     setDuration(end - start);
   }
 
+  // Brute force: O(n^2)
   function plotGraph() {
     const a = Number(form.a);
     const b = Number(form.b);
@@ -77,7 +77,6 @@ export default function App() {
     setGraphDuration(0);
     setGraphData([]);
     setFreq({});
-    const total = endN - startN + 1;
     const startTime = performance.now();
     // Use setTimeout to allow UI updates for progress
     function processBatch(batchStart) {
@@ -93,9 +92,10 @@ export default function App() {
         data.push({ n, cnt });
         freqMap[cnt] = (freqMap[cnt] || 0) + 1;
       }
-      
-      setFreq({...freqMap});
+
+      setFreq({ ...freqMap });
       const done = batchEnd - startN + 1;
+      const total = endN - startN + 1;
       setProgress(Math.round((done / total) * 100));
       if (batchEnd < endN) {
         setTimeout(() => processBatch(batchEnd + 1), 0);
@@ -106,6 +106,43 @@ export default function App() {
       }
     }
     processBatch(startN);
+  }
+
+  // Use sieve algorithm
+  function plotGraphV2() {
+    const a = Number(form.a);
+    const b = Number(form.b);
+    const startN = Number(nStart);
+    const endN = Number(nEnd);
+    if (!isPositiveInteger(a) || !isPositiveInteger(b) || !isPositiveInteger(startN) || !isPositiveInteger(endN) || startN >= endN) {
+      alert("Enter valid positive integers for a, b, nStart < nEnd.");
+      return;
+    }
+    let data = Array(endN - startN + 1).fill(0);
+    let freqMap = {};
+    setProgress(0);
+    setGraphDuration(0);
+    setGraphData([]);
+    setFreq({});
+    const startTime = performance.now();
+    // Sieve-like algorithm
+    for (let d = (b > 1 ? b : a + b); d < endN; d += a) {
+      for (let i = Math.max((Math.ceil(startN / d) + 1) * d, d * 2); i <= endN; i += d) {
+        data[i - startN]++;
+      }
+      setProgress(Math.round(((d - (b > 1 ? b : a + b)) / (endN - (b > 1 ? b : a + b))) * 100));
+    }
+    // Build graphData and freqMap
+    let graphData = [];
+    for (let n = startN; n <= endN; n++) {
+      let cnt = data[n - startN];
+      graphData.push({ n, cnt });
+      freqMap[cnt] = (freqMap[cnt] || 0) + 1;
+    }
+    setGraphData(graphData);
+    setFreq(freqMap);
+    setProgress(100);
+    setGraphDuration(performance.now() - startTime);
   }
 
   // Responsive plot width: always fit window size and update on resize
@@ -125,19 +162,25 @@ export default function App() {
   const tickCount = 5;
   const maxCnt = Math.max(...graphData.map(d => d.cnt), 1);
 
-  // Axis ticks
-  const xTicks = Array.from({length: tickCount+1}, (_, i) => Math.round(Number(nStart) + i*(Number(nEnd)-Number(nStart))/tickCount));
-  const yTicks = Array.from({length: tickCount+1}, (_, i) => Math.round(i*maxCnt/tickCount));
-
   // Frequency chart dimensions based on number of bars
   const freqEntries = Object.entries(freq)
-    .map(([cnt, f]) => ({cnt: Number(cnt), freq: f}))
+    .map(([cnt, f]) => ({ cnt: Number(cnt), freq: f }))
     .sort((a, b) => a.cnt - b.cnt);
   const minChartWidth = 400;
   const maxChartWidth = Math.min(window.innerWidth - 120, 900);
   const chartWidth = Math.max(minChartWidth, Math.min(maxChartWidth, freqEntries.length * 24 + 120));
   const chartHeight = 240;
-  const chartPadding = 60;
+
+  // Prepare data for CanvasJS charts
+  const scatterDataPoints = graphData.map(d => ({
+    x: d.n,
+    y: d.cnt
+  }));
+
+  const freqDataPoints = freqEntries.map(e => ({
+    label: String(e.cnt),
+    y: e.freq
+  }));
 
   return (
     <div style={{
@@ -153,90 +196,60 @@ export default function App() {
         boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
         padding: '32px 40px'
       }}>
-        <h1 style={{textAlign: 'center', color: '#2563eb', marginBottom: 32}}>Fn(ax+b)</h1>
+        <h1 style={{ textAlign: 'center', color: '#2563eb', marginBottom: 32 }}>Fn(ax+b)</h1>
         <FnForm form={form} onChange={handleChange} onSubmit={submit} />
         <ResultDisplay count={count} duration={duration} />
-        <hr style={{margin: '32px 0', borderColor: '#e5e7eb'}} />
+        <hr style={{ margin: '32px 0', borderColor: '#e5e7eb' }} />
         <div>
-          <h2 style={{color: '#2563eb', marginBottom: 18}}>Plot number of solutions for n range</h2>
-          <RangeSelector nStart={nStart} nEnd={nEnd} setNStart={setNStart} setNEnd={setNEnd} onPlot={plotGraph} />
+          <h2 style={{ color: '#2563eb', marginBottom: 18 }}>Plot number of solutions for n range</h2>
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="algorithm-select" style={{ marginRight: 10, fontWeight: 500 }}>Algorithm:</label>
+            <select id="algorithm-select" value={algorithm} onChange={e => setAlgorithm(e.target.value)} style={{ padding: '6px 12px', fontSize: 15 }}>
+              <option value="brute">Brute Force</option>
+              <option value="sieve">Sieve (Fast)</option>
+            </select>
+          </div>
+          <RangeSelector nStart={nStart} nEnd={nEnd} setNStart={setNStart} setNEnd={setNEnd} onPlot={algorithm === 'sieve' ? plotGraphV2 : plotGraph} />
           <ProgressBar progress={progress} graphDuration={graphDuration} />
-          <div style={{position: 'relative', background: '#f1f5f9', borderRadius: 12, padding: 16, marginTop: 16, boxShadow: '0 2px 8px rgba(37,99,235,0.04)'}}>
+          <div style={{ position: 'relative', background: '#f1f5f9', borderRadius: 12, padding: 16, marginTop: 16, boxShadow: '0 2px 8px rgba(37,99,235,0.04)' }}>
+            {/* Scatter plot using CanvasJS */}
             {graphData.length > 0 && (
-              <ScatterPlot
-                graphData={graphData}
-                nStart={nStart}
-                nEnd={nEnd}
-                width={plotWidth}
-                height={height}
-                padding={padding}
-                maxCnt={maxCnt}
-                xTicks={xTicks}
-                yTicks={yTicks}
-                tooltip={tooltip}
-                setTooltip={setTooltip}
+              <CanvasJSReact.CanvasJSChart
+                options={{
+                  animationEnabled: true,
+                  theme: "light2",
+                  title: { text: "Number of Solutions per n" },
+                  axisX: { title: "n" },
+                  axisY: { title: "# solutions" },
+                  data: [{
+                    type: "scatter",
+                    toolTipContent: "<b>n:</b> {x} <br/><b># solutions:</b> {y}",
+                    dataPoints: scatterDataPoints
+                  }]
+                }}
+                containerProps={{ width: `${plotWidth}px`, height: `${height}px` }}
               />
             )}
-            {/* Tooltip for scatter plot */}
-            {tooltip.visible && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: tooltip.x + 20,
-                  top: tooltip.y - 10,
-                  background: '#fff',
-                  border: '1px solid #2563eb',
-                  borderRadius: 8,
-                  padding: '8px 14px',
-                  fontSize: '15px',
-                  color: '#2563eb',
-                  fontWeight: 500,
-                  boxShadow: '0 2px 8px rgba(37,99,235,0.08)',
-                  pointerEvents: 'none',
-                  zIndex: 10
-                }}
-              >
-                <div>n: {tooltip.n}</div>
-                <div># solutions: {tooltip.cnt}</div>
-              </div>
-            )}
-            {/* Frequency chart */}
+            {/* Frequency chart using CanvasJS */}
             {graphData.length > 0 && (
-              <div style={{marginTop: 32}}>
-                <h3 style={{color: '#2563eb', fontWeight: 600, fontSize: 18, marginBottom: 8}}>Frequency of solution counts</h3>
-                <div style={{background: '#fff', borderRadius: 8, padding: 24, boxShadow: '0 2px 8px rgba(37,99,235,0.04)', position: 'relative'}}>
-                  <FrequencyChart
-                    freqEntries={freqEntries}
-                    chartWidth={chartWidth}
-                    chartHeight={chartHeight}
-                    chartPadding={chartPadding}
-                    maxFreq={Math.max(...freqEntries.map(e => e.freq), 1)}
-                    barTooltip={barTooltip}
-                    setBarTooltip={setBarTooltip}
+              <div style={{ marginTop: 32 }}>
+                <h3 style={{ color: '#2563eb', fontWeight: 600, fontSize: 18, marginBottom: 8 }}>Frequency of solution counts</h3>
+                <div style={{ background: '#fff', borderRadius: 8, padding: 24, boxShadow: '0 2px 8px rgba(37,99,235,0.04)', position: 'relative' }}>
+                  <CanvasJSReact.CanvasJSChart
+                    options={{
+                      animationEnabled: true,
+                      theme: "light2",
+                      title: { text: "Frequency of Solution Counts" },
+                      axisX: { title: "# solutions" },
+                      axisY: { title: "Frequency" },
+                      data: [{
+                        type: "column",
+                        toolTipContent: "<b># solutions:</b> {label} <br/><b>Frequency:</b> {y}",
+                        dataPoints: freqDataPoints
+                      }]
+                    }}
+                    containerProps={{ width: `${chartWidth}px`, height: `${chartHeight}px` }}
                   />
-                  {/* Bar chart tooltip */}
-                  {barTooltip.visible && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: barTooltip.x + 20,
-                        top: barTooltip.y,
-                        background: '#fff',
-                        border: '1px solid #2563eb',
-                        borderRadius: 8,
-                        padding: '8px 14px',
-                        fontSize: '15px',
-                        color: '#2563eb',
-                        fontWeight: 500,
-                        boxShadow: '0 2px 8px rgba(37,99,235,0.08)',
-                        pointerEvents: 'none',
-                        zIndex: 10
-                      }}
-                    >
-                      <div># solutions: {barTooltip.n}</div>
-                      <div>Frequency: {barTooltip.cnt}</div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
